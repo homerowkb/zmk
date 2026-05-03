@@ -524,6 +524,64 @@ zmk_studio_Response set_layer_props(const zmk_studio_Request *req) {
     return KEYMAP_RESPONSE(set_layer_props, resp);
 }
 
+zmk_studio_Response get_profile_count(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    return KEYMAP_RESPONSE(get_profile_count, zmk_keymap_profile_count());
+}
+
+zmk_studio_Response get_active_profile(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    return KEYMAP_RESPONSE(get_active_profile, zmk_keymap_profile_index());
+}
+
+static zmk_keymap_SetProfileResponse make_set_profile_response(int ret) {
+    zmk_keymap_SetProfileResponse resp = zmk_keymap_SetProfileResponse_init_zero;
+
+    if (ret < 0) {
+        resp.which_result = zmk_keymap_SetProfileResponse_err_tag;
+        resp.result.err = zmk_keymap_SetProfileErrorCode_SET_PROFILE_ERR_GENERIC;
+        return resp;
+    }
+
+    resp.which_result = zmk_keymap_SetProfileResponse_ok_tag;
+    resp.result.ok = zmk_keymap_profile_index();
+    return resp;
+}
+
+zmk_studio_Response profile_next(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    int ret = zmk_keymap_profile_next();
+
+    if (ret < 0) {
+        LOG_WRN("Failed to go to next profile: %d", ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_next, make_set_profile_response(ret));
+}
+
+zmk_studio_Response profile_prev(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    int ret = zmk_keymap_profile_prev();
+
+    if (ret < 0) {
+        LOG_WRN("Failed to go to previous profile: %d", ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_prev, make_set_profile_response(ret));
+}
+
+zmk_studio_Response profile_select(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    uint32_t profile = req->subsystem.keymap.request_type.profile_select;
+    int ret = zmk_keymap_profile_select(profile);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to select profile %u: %d", (unsigned int)profile, ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_select, make_set_profile_response(ret));
+}
+
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_keymap, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, set_layer_binding, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, check_unsaved_changes, ZMK_STUDIO_RPC_HANDLER_SECURED);
@@ -536,6 +594,11 @@ ZMK_RPC_SUBSYSTEM_HANDLER(keymap, add_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, remove_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, restore_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, set_layer_props, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_profile_count, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_active_profile, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_next, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_prev, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_select, ZMK_STUDIO_RPC_HANDLER_SECURED);
 
 static int event_mapper(const zmk_event_t *eh, zmk_studio_Notification *n) { return 0; }
 
