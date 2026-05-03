@@ -74,18 +74,36 @@ static const struct behavior_parameter_metadata metadata = {
 
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
                                      struct zmk_behavior_binding_event event) {
+    int current_profile = zmk_keymap_profile_index();
+    int ret;
+
+    LOG_DBG("Profile behavior pressed: cmd=%d param2=%d pos=%d layer=%d current_profile=%d",
+            binding->param1, binding->param2, event.position, event.layer, current_profile);
+
     switch (binding->param1) {
     case PROFILE_NXT_CMD:
-        return zmk_keymap_profile_next();
+        ret = zmk_keymap_profile_next();
+        break;
     case PROFILE_PRV_CMD:
-        return zmk_keymap_profile_prev();
+        ret = zmk_keymap_profile_prev();
+        break;
     case PROFILE_SEL_CMD:
-        return zmk_keymap_profile_select(binding->param2);
+        ret = zmk_keymap_profile_select(binding->param2);
+        break;
     default:
         LOG_ERR("Unknown profile command: %d", binding->param1);
+        return -ENOTSUP;
     }
 
-    return -ENOTSUP;
+    if (ret < 0) {
+        LOG_ERR("Profile behavior failed: cmd=%d ret=%d", binding->param1, ret);
+        return ret;
+    }
+
+    LOG_DBG("Profile behavior complete: cmd=%d profile %d -> %d", binding->param1,
+            current_profile, zmk_keymap_profile_index());
+
+    return ret;
 }
 
 static int on_keymap_binding_released(struct zmk_behavior_binding *binding,

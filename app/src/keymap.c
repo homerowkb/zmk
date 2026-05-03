@@ -468,21 +468,28 @@ int zmk_keymap_profile_count(void) { return ZMK_KEYMAP_PROFILES_LEN; }
 int zmk_keymap_profile_index(void) { return active_profile; }
 int zmk_keymap_profile_next(void) {
     int next_profile = (active_profile + 1) % ZMK_KEYMAP_PROFILES_LEN;
+    LOG_DBG("Profile next requested: current=%d next=%d", active_profile, next_profile);
     return zmk_keymap_profile_select(next_profile);
 }
 int zmk_keymap_profile_prev(void) {
     int prev_profile = (active_profile - 1 + ZMK_KEYMAP_PROFILES_LEN) % ZMK_KEYMAP_PROFILES_LEN;
+    LOG_DBG("Profile prev requested: current=%d prev=%d", active_profile, prev_profile);
     return zmk_keymap_profile_select(prev_profile);
 }
 int zmk_keymap_profile_select(uint8_t profile) {
     uint8_t _profile = profile % ZMK_KEYMAP_PROFILES_LEN;
 
+    LOG_DBG("Profile select requested: current=%d requested=%d normalized=%d", active_profile,
+            profile, _profile);
+
     if (_profile == active_profile) {
+        LOG_DBG("Profile select skipped: already on profile %d", active_profile);
         return 0;
     }
 
     char setting_name[20];
     sprintf(setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, _profile);
+    LOG_DBG("Loading keymap subtree '%s' (current profile=%d)", setting_name, active_profile);
     int ret = settings_load_subtree(setting_name);
     if (ret < 0) {
         LOG_ERR("Failed to load keymap for profile %d (%d)", _profile, ret);
@@ -490,6 +497,7 @@ int zmk_keymap_profile_select(uint8_t profile) {
     }
 
     active_profile = _profile;
+    LOG_DBG("Profile select complete: active_profile=%d", active_profile);
 
     return 0;
 }
@@ -645,12 +653,15 @@ static void reload_from_stock_keymap(void) {
 }
 
 int zmk_keymap_discard_changes(void) {
+    LOG_DBG("Discard changes requested for active_profile=%d", active_profile);
     load_stock_keymap_layer_ordering();
     reload_from_stock_keymap();
 
     int ret = settings_load_subtree("keymap");
     char setting_name[20];
     sprintf(setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, active_profile);
+    LOG_DBG("Reloading profile-specific subtree '%s' for active_profile=%d", setting_name,
+            active_profile);
     ret += settings_load_subtree(setting_name);
     if (ret >= 0) {
         changed_layer_names = 0;
@@ -884,7 +895,23 @@ ZMK_SUBSCRIPTION(keymap, zmk_sensor_event);
 static int keymap_handle_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
     const char *next;
 
-    LOG_DBG("Setting Keymap setting %s", name);
+    LOG_DBG("Setting keymap setting '%s' len=%d active_profile=%d", name, len, active_profile);
+
+    if (settings_name_steq(name, "p", &next) && next) {
+        char *endptr;
+        uint8_t profile = strtoul(next, &endptr, 10);
+
+        if (*endptr == '/') {
+            LOG_DBG("Profile-scoped keymap setting: profile=%d active_profile=%d key='%s'", profile,
+                    active_profile, endptr + 1);
+        } else if (*endptr == '\0') {
+            LOG_DBG("Profile-scoped keymap subtree key: profile=%d active_profile=%d", profile,
+                    active_profile);
+        } else {
+            LOG_WRN("Invalid profile-scoped key '%s' while active_profile=%d", name,
+                    active_profile);
+        }
+    }
 
     if (settings_name_steq(name, "l_n", &next) && next) {
         char *endptr;
@@ -907,6 +934,8 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
         }
 
         zmk_keymap_layer_names[layer][ret] = 0;
+        LOG_DBG("Loaded layer name for layer=%d active_profile=%d name='%s'", layer, active_profile,
+                zmk_keymap_layer_names[layer]);
     } else if (settings_name_steq(name, "l", &next) && next) {
         char *endptr;
         uint8_t layer = strtoul(next, &endptr, 10);
@@ -961,6 +990,8 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
             .param1 = binding_setting.param1,
             .param2 = binding_setting.param2,
         };
+        LOG_DBG("Loaded layer binding for layer=%d position=%d active_profile=%d behavior_id=%d",
+                layer, key_position, active_profile, binding_setting.behavior_local_id);
     }
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
     else if (settings_name_steq(name, "layer_order", &next) && !next) {
@@ -976,13 +1007,18 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
 
         memcpy(keymap_layer_orders, settings_layer_orders,
                MIN(len, ARRAY_SIZE(settings_layer_orders)));
+        LOG_DBG("Loaded layer order for active_profile=%d", active_profile);
     }
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
+    else {
+        LOG_DBG("Ignoring keymap setting '%s' while active_profile=%d", name, active_profile);
+    }
 
     return 0;
 };
 
 static int keymap_handle_commit(void) {
+    LOG_DBG("Keymap settings commit start: active_profile=%d", active_profile);
 #if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_LOCAL_IDS_IN_BINDINGS)
     for (int l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
         for (int p = 0; p < ZMK_KEYMAP_LEN; p++) {
@@ -1001,6 +1037,7 @@ static int keymap_handle_commit(void) {
     }
 #endif
 
+    LOG_DBG("Keymap settings commit complete: active_profile=%d", active_profile);
     return 0;
 }
 
@@ -1010,6 +1047,7 @@ SETTINGS_STATIC_HANDLER_DEFINE(keymap, "keymap", NULL, keymap_handle_set, keymap
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
 int keymap_init(void) {
+    LOG_DBG("Keymap init: active_profile=%d", active_profile);
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
     load_stock_keymap_layer_ordering();
 #endif
