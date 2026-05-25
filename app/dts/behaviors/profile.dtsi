@@ -1,0 +1,17 @@
+/*
+ * Copyright (c) 2020 The ZMK Contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <dt-bindings/zmk/behaviors.h>
+
+/ {
+    behaviors {
+        pf: profile {
+            compatible = "zmk,behavior-profile";
+            #binding-cells = <2>;
+            display-name = "Profile";
+        };
+    };
+};
