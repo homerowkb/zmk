@@ -901,26 +901,18 @@ ZMK_SUBSCRIPTION(keymap, zmk_sensor_event);
 
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
-static int keymap_handle_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
+static int keymap_handle_set(const char *_name, size_t len, settings_read_cb read_cb,
+                             void *cb_arg) {
     const char *next;
+    const char *name = _name;
 
-    LOG_DBG("Setting keymap setting '%s' len=%d active_profile=%d", name, len, active_profile);
+    LOG_DBG("Setting keymap setting '%s' len=%d active_profile=%d", _name, len, active_profile);
 
-    if (settings_name_steq(name, "p", &next) && next) {
-        char *endptr;
-        uint8_t profile = strtoul(next, &endptr, 10);
-
-        if (*endptr == '/') {
-            LOG_DBG("Profile-scoped keymap setting: profile=%d active_profile=%d key='%s'", profile,
-                    active_profile, endptr + 1);
-        } else if (*endptr == '\0') {
-            LOG_DBG("Profile-scoped keymap subtree key: profile=%d active_profile=%d", profile,
-                    active_profile);
-        } else {
-            LOG_WRN("Invalid profile-scoped key '%s' while active_profile=%d", name,
-                    active_profile);
-        }
+    if (name[0] == 'p') {
+        name = _name + 4;
     }
+
+    LOG_DBG("Current name '%s'", name);
 
     if (settings_name_steq(name, "l_n", &next) && next) {
         char *endptr;
