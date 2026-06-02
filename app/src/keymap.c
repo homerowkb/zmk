@@ -547,12 +547,18 @@ int zmk_keymap_profile_count(void) { return ZMK_KEYMAP_PROFILES_LEN; }
 int zmk_keymap_profile_index(void) { return active_profile; }
 int zmk_keymap_profile_next(void) {
     int next_profile = (active_profile + 1) % ZMK_KEYMAP_PROFILES_LEN;
-    LOG_DBG("Profile next requested: current=%d next=%d", active_profile, next_profile);
+    LOG_DBG("Profile next requested: current=%d next=%d, of %d", active_profile, next_profile,
+            ZMK_KEYMAP_PROFILES_LEN);
     return zmk_keymap_profile_select(next_profile);
 }
 int zmk_keymap_profile_prev(void) {
-    int prev_profile = (active_profile - 1 + ZMK_KEYMAP_PROFILES_LEN) % ZMK_KEYMAP_PROFILES_LEN;
-    LOG_DBG("Profile prev requested: current=%d prev=%d", active_profile, prev_profile);
+    int prev_profile = (active_profile - 1);
+    if (prev_profile < 0) {
+        prev_profile += ZMK_KEYMAP_PROFILES_LEN;
+    }
+    prev_profile = prev_profile % ZMK_KEYMAP_PROFILES_LEN;
+    LOG_DBG("Profile prev requested: current=%d prev=%d, of %d", active_profile, prev_profile,
+            ZMK_KEYMAP_PROFILES_LEN);
     return zmk_keymap_profile_select(prev_profile);
 }
 int zmk_keymap_profile_select(uint8_t profile) {
