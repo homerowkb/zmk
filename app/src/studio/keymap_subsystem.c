@@ -582,6 +582,35 @@ zmk_studio_Response profile_select(const zmk_studio_Request *req) {
     return KEYMAP_RESPONSE(profile_select, make_set_profile_response(ret));
 }
 
+zmk_studio_Response clone_profile(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    const zmk_keymap_CloneProfileRequest *clone_req =
+        &req->subsystem.keymap.request_type.clone_profile;
+
+    zmk_keymap_CloneProfileResponse resp = zmk_keymap_CloneProfileResponse_init_zero;
+
+    int ret = zmk_keymap_profile_clone(clone_req->source_profile, clone_req->dest_profile);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to clone profile %u to %u: %d", (unsigned int)clone_req->source_profile,
+                (unsigned int)clone_req->dest_profile, ret);
+        resp.which_result = zmk_keymap_CloneProfileResponse_err_tag;
+        switch (ret) {
+        case -EINVAL:
+            resp.result.err = zmk_keymap_CloneProfileErrorCode_CLONE_PROFILE_ERR_INVALID_PROFILE;
+            break;
+        default:
+            resp.result.err = zmk_keymap_CloneProfileErrorCode_CLONE_PROFILE_ERR_GENERIC;
+            break;
+        }
+    } else {
+        resp.which_result = zmk_keymap_CloneProfileResponse_ok_tag;
+        resp.result.ok = true;
+    }
+
+    return KEYMAP_RESPONSE(clone_profile, resp);
+}
+
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_keymap, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, set_layer_binding, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, check_unsaved_changes, ZMK_STUDIO_RPC_HANDLER_SECURED);
@@ -599,6 +628,7 @@ ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_active_profile, ZMK_STUDIO_RPC_HANDLER_SEC
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_next, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_prev, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_select, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, clone_profile, ZMK_STUDIO_RPC_HANDLER_SECURED);
 
 static int event_mapper(const zmk_event_t *eh, zmk_studio_Notification *n) { return 0; }
 
