@@ -587,6 +587,70 @@ int zmk_keymap_profile_select(uint8_t profile) {
     return 0;
 }
 
+static int zmk_keymap_profile_clone_handler(const char *key, size_t len, settings_read_cb read_cb,
+                                             void *cb_arg, void *param) {
+    const char *next;
+    uint8_t dest_profile = *(uint8_t *)param;
+
+    if (settings_name_steq(key, "l", &next) && next) {
+        char *endptr;
+        uint8_t layer = strtoul(next, &endptr, 10);
+        if (*endptr != '/') {
+            LOG_WRN("Invalid layer number in clone: %s with endptr %s", next, endptr);
+            return -EINVAL;
+        }
+
+        uint8_t key_position = strtoul(endptr + 1, &endptr, 10);
+        if (*endptr != '\0') {
+            LOG_WRN("Invalid key_position in clone: %s with endptr %s", next, endptr);
+            return -EINVAL;
+        }
+
+        if (len > sizeof(struct zmk_behavior_binding_setting)) {
+            LOG_ERR("Too large binding setting size (got %d expected %d)", len,
+                    sizeof(struct zmk_behavior_binding_setting));
+            return -EINVAL;
+        }
+
+        struct zmk_behavior_binding_setting binding_setting = {0};
+        int err = read_cb(cb_arg, &binding_setting, len);
+        if (err <= 0) {
+            LOG_ERR("Failed to read binding for clone (err %d)", err);
+            return err;
+        }
+
+        char dest_key[29];
+        sprintf(dest_key, LAYER_BINDING_SETTINGS_KEY, dest_profile, layer, key_position);
+        err = settings_save_one(dest_key, &binding_setting, len);
+        if (err < 0) {
+            LOG_ERR("Failed to save cloned binding at %s (err %d)", dest_key, err);
+            return err;
+        }
+
+        LOG_DBG("Cloned binding layer=%d pos=%d to profile=%d", layer, key_position, dest_profile);
+    }
+
+    return 0;
+}
+
+int zmk_keymap_profile_clone(uint8_t source_profile, uint8_t dest_profile) {
+    if (source_profile >= ZMK_KEYMAP_PROFILES_LEN || dest_profile >= ZMK_KEYMAP_PROFILES_LEN) {
+        return -EINVAL;
+    }
+
+    if (source_profile == dest_profile) {
+        LOG_DBG("Profile clone skipped: source and destination are the same profile %d",
+                source_profile);
+        return 0;
+    }
+
+    char source_setting_name[12];
+    sprintf(source_setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, source_profile);
+
+    return settings_load_subtree_direct(source_setting_name, zmk_keymap_profile_clone_handler,
+                                        &dest_profile);
+}
+
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 static int save_layer_orders(void) {
     char setting_name[22];
