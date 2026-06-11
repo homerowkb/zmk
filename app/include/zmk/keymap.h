@@ -82,6 +82,7 @@ int zmk_keymap_profile_index(void);
 int zmk_keymap_profile_next(void);
 int zmk_keymap_profile_prev(void);
 int zmk_keymap_profile_select(uint8_t profile);
+int zmk_keymap_profile_clone(uint8_t source_profile, uint8_t dest_profile);
 
 /**
  * @brief Check if there are any unsaved keymap changes.
