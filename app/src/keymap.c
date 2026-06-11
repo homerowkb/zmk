@@ -329,6 +329,8 @@ int zmk_keymap_set_layer_binding_at_idx(zmk_keymap_layer_id_t layer_id, uint16_t
     return -ENOTSUP;
 }
 
+int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer) { return -ENOTSUP; }
+
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 
@@ -464,10 +466,6 @@ int zmk_keymap_set_layer_name(zmk_keymap_layer_id_t id, const char *name, size_t
 
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
-#define PENDING_ARRAY_SIZE DIV_ROUND_UP(ZMK_KEYMAP_LEN, 8)
-
-static uint8_t zmk_keymap_layer_pending_changes[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE];
-
 struct zmk_behavior_binding_setting {
     zmk_behavior_local_id_t behavior_local_id;
     uint32_t param1;
@@ -588,7 +586,7 @@ int zmk_keymap_profile_select(uint8_t profile) {
 }
 
 static int zmk_keymap_profile_clone_handler(const char *key, size_t len, settings_read_cb read_cb,
-                                             void *cb_arg, void *param) {
+                                            void *cb_arg, void *param) {
     const char *next;
     uint8_t dest_profile = *(uint8_t *)param;
 
@@ -1108,6 +1106,25 @@ static int keymap_handle_commit(void) {
 
 SETTINGS_STATIC_HANDLER_DEFINE(keymap, "keymap", NULL, keymap_handle_set, keymap_handle_commit,
                                NULL);
+
+int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer) {
+    if (source_layer >= ZMK_KEYMAP_LAYERS_LEN || dest_layer >= ZMK_KEYMAP_LAYERS_LEN) {
+        return -EINVAL;
+    }
+
+    if (source_layer == dest_layer) {
+        return 0;
+    }
+
+    for (uint16_t k = 0; k < ZMK_KEYMAP_LEN; k++) {
+        int ret = zmk_keymap_set_layer_binding_at_idx(dest_layer, k, zmk_keymap[source_layer][k]);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
 
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 

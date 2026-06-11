@@ -524,6 +524,34 @@ zmk_studio_Response set_layer_props(const zmk_studio_Request *req) {
     return KEYMAP_RESPONSE(set_layer_props, resp);
 }
 
+zmk_studio_Response clone_layer(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    const zmk_keymap_CloneLayerRequest *clone_req = &req->subsystem.keymap.request_type.clone_layer;
+
+    zmk_keymap_CloneLayerResponse resp = zmk_keymap_CloneLayerResponse_init_zero;
+
+    int ret = zmk_keymap_layer_clone(clone_req->source_layer, clone_req->dest_layer);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to clone layer %u to %u: %d", (unsigned int)clone_req->source_layer,
+                (unsigned int)clone_req->dest_layer, ret);
+        resp.which_result = zmk_keymap_CloneLayerResponse_err_tag;
+        switch (ret) {
+        case -EINVAL:
+            resp.result.err = zmk_keymap_CloneLayerErrorCode_CLONE_LAYER_ERR_INVALID_LAYER;
+            break;
+        default:
+            resp.result.err = zmk_keymap_CloneLayerErrorCode_CLONE_LAYER_ERR_GENERIC;
+            break;
+        }
+    } else {
+        resp.which_result = zmk_keymap_CloneLayerResponse_ok_tag;
+        resp.result.ok = true;
+    }
+
+    return KEYMAP_RESPONSE(clone_layer, resp);
+}
+
 zmk_studio_Response get_profile_count(const zmk_studio_Request *req) {
     LOG_DBG("");
     return KEYMAP_RESPONSE(get_profile_count, zmk_keymap_profile_count());
@@ -629,6 +657,7 @@ ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_next, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_prev, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_select, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, clone_profile, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, clone_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 
 static int event_mapper(const zmk_event_t *eh, zmk_studio_Notification *n) { return 0; }
 
