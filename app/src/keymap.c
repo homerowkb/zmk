@@ -1117,7 +1117,9 @@ int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer) {
     }
 
     for (uint16_t k = 0; k < ZMK_KEYMAP_LEN; k++) {
-        int ret = zmk_keymap_set_layer_binding_at_idx(dest_layer, k, zmk_keymap[source_layer][k]);
+        const struct zmk_behavior_binding *binding =
+            zmk_keymap_get_layer_binding_at_idx(source_layer, k);
+        int ret = zmk_keymap_set_layer_binding_at_idx(dest_layer, k, *binding);
         if (ret < 0) {
             return ret;
         }
