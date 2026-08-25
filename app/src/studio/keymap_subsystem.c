@@ -524,6 +524,121 @@ zmk_studio_Response set_layer_props(const zmk_studio_Request *req) {
     return KEYMAP_RESPONSE(set_layer_props, resp);
 }
 
+zmk_studio_Response clone_layer(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    const zmk_keymap_CloneLayerRequest *clone_req = &req->subsystem.keymap.request_type.clone_layer;
+
+    zmk_keymap_CloneLayerResponse resp = zmk_keymap_CloneLayerResponse_init_zero;
+
+    int ret = zmk_keymap_layer_clone(clone_req->source_layer, clone_req->dest_layer);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to clone layer %u to %u: %d", (unsigned int)clone_req->source_layer,
+                (unsigned int)clone_req->dest_layer, ret);
+        resp.which_result = zmk_keymap_CloneLayerResponse_err_tag;
+        switch (ret) {
+        case -EINVAL:
+            resp.result.err = zmk_keymap_CloneLayerErrorCode_CLONE_LAYER_ERR_INVALID_LAYER;
+            break;
+        default:
+            resp.result.err = zmk_keymap_CloneLayerErrorCode_CLONE_LAYER_ERR_GENERIC;
+            break;
+        }
+    } else {
+        resp.which_result = zmk_keymap_CloneLayerResponse_ok_tag;
+        resp.result.ok = true;
+    }
+
+    return KEYMAP_RESPONSE(clone_layer, resp);
+}
+
+zmk_studio_Response get_profile_count(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    return KEYMAP_RESPONSE(get_profile_count, zmk_keymap_profile_count());
+}
+
+zmk_studio_Response get_active_profile(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    return KEYMAP_RESPONSE(get_active_profile, zmk_keymap_profile_index());
+}
+
+static zmk_keymap_SetProfileResponse make_set_profile_response(int ret) {
+    zmk_keymap_SetProfileResponse resp = zmk_keymap_SetProfileResponse_init_zero;
+
+    if (ret < 0) {
+        resp.which_result = zmk_keymap_SetProfileResponse_err_tag;
+        resp.result.err = zmk_keymap_SetProfileErrorCode_SET_PROFILE_ERR_GENERIC;
+        return resp;
+    }
+
+    resp.which_result = zmk_keymap_SetProfileResponse_ok_tag;
+    resp.result.ok = zmk_keymap_profile_index();
+    return resp;
+}
+
+zmk_studio_Response profile_next(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    int ret = zmk_keymap_profile_next();
+
+    if (ret < 0) {
+        LOG_WRN("Failed to go to next profile: %d", ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_next, make_set_profile_response(ret));
+}
+
+zmk_studio_Response profile_prev(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    int ret = zmk_keymap_profile_prev();
+
+    if (ret < 0) {
+        LOG_WRN("Failed to go to previous profile: %d", ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_prev, make_set_profile_response(ret));
+}
+
+zmk_studio_Response profile_select(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    uint32_t profile = req->subsystem.keymap.request_type.profile_select;
+    int ret = zmk_keymap_profile_select(profile);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to select profile %u: %d", (unsigned int)profile, ret);
+    }
+
+    return KEYMAP_RESPONSE(profile_select, make_set_profile_response(ret));
+}
+
+zmk_studio_Response clone_profile(const zmk_studio_Request *req) {
+    LOG_DBG("");
+    const zmk_keymap_CloneProfileRequest *clone_req =
+        &req->subsystem.keymap.request_type.clone_profile;
+
+    zmk_keymap_CloneProfileResponse resp = zmk_keymap_CloneProfileResponse_init_zero;
+
+    int ret = zmk_keymap_profile_clone(clone_req->source_profile, clone_req->dest_profile);
+
+    if (ret < 0) {
+        LOG_WRN("Failed to clone profile %u to %u: %d", (unsigned int)clone_req->source_profile,
+                (unsigned int)clone_req->dest_profile, ret);
+        resp.which_result = zmk_keymap_CloneProfileResponse_err_tag;
+        switch (ret) {
+        case -EINVAL:
+            resp.result.err = zmk_keymap_CloneProfileErrorCode_CLONE_PROFILE_ERR_INVALID_PROFILE;
+            break;
+        default:
+            resp.result.err = zmk_keymap_CloneProfileErrorCode_CLONE_PROFILE_ERR_GENERIC;
+            break;
+        }
+    } else {
+        resp.which_result = zmk_keymap_CloneProfileResponse_ok_tag;
+        resp.result.ok = true;
+    }
+
+    return KEYMAP_RESPONSE(clone_profile, resp);
+}
+
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_keymap, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, set_layer_binding, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, check_unsaved_changes, ZMK_STUDIO_RPC_HANDLER_SECURED);
@@ -536,6 +651,13 @@ ZMK_RPC_SUBSYSTEM_HANDLER(keymap, add_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, remove_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, restore_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 ZMK_RPC_SUBSYSTEM_HANDLER(keymap, set_layer_props, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_profile_count, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, get_active_profile, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_next, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_prev, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, profile_select, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, clone_profile, ZMK_STUDIO_RPC_HANDLER_SECURED);
+ZMK_RPC_SUBSYSTEM_HANDLER(keymap, clone_layer, ZMK_STUDIO_RPC_HANDLER_SECURED);
 
 static int event_mapper(const zmk_event_t *eh, zmk_studio_Notification *n) { return 0; }
 

@@ -73,6 +73,8 @@ static uint8_t keymap_layer_orders[ZMK_KEYMAP_LAYERS_LEN];
 
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 
+static uint8_t active_profile = 0;
+
 #define KEYMAP_VAR(_name, _opts, no_init)                                                          \
     static _opts struct zmk_behavior_binding _name[ZMK_KEYMAP_LAYERS_LEN][ZMK_KEYMAP_LEN] = {      \
         COND_CODE_0(no_init, (ZMK_KEYMAP_LAYERS_FOREACH_SEP(TRANSFORMED_LAYER, (, ))), (0))};
@@ -327,6 +329,8 @@ int zmk_keymap_set_layer_binding_at_idx(zmk_keymap_layer_id_t layer_id, uint16_t
     return -ENOTSUP;
 }
 
+int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer) { return -ENOTSUP; }
+
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 
@@ -462,10 +466,6 @@ int zmk_keymap_set_layer_name(zmk_keymap_layer_id_t id, const char *name, size_t
 
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
-#define PENDING_ARRAY_SIZE DIV_ROUND_UP(ZMK_KEYMAP_LEN, 8)
-
-static uint8_t zmk_keymap_layer_pending_changes[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE];
-
 struct zmk_behavior_binding_setting {
     zmk_behavior_local_id_t behavior_local_id;
     uint32_t param1;
@@ -491,9 +491,10 @@ int zmk_keymap_check_unsaved_changes(void) {
     return 0;
 }
 
-#define LAYER_ORDER_SETTINGS_KEY "keymap/layer_order"
+#define LAYER_ORDER_SETTINGS_KEY "keymap/layer_order/%d"
 #define LAYER_NAME_SETTINGS_KEY "keymap/l_n/%d"
-#define LAYER_BINDING_SETTINGS_KEY "keymap/l/%d/%d"
+#define LAYER_BINDING_SETTINGS_PROFILE_KEY "keymap/p/%d"
+#define LAYER_BINDING_SETTINGS_KEY LAYER_BINDING_SETTINGS_PROFILE_KEY "/l/%d/%d"
 
 static int save_bindings(void) {
     for (int l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
@@ -523,8 +524,8 @@ static int save_bindings(void) {
                     }
                 }
 
-                char setting_name[20];
-                sprintf(setting_name, LAYER_BINDING_SETTINGS_KEY, l, kp);
+                char setting_name[29];
+                sprintf(setting_name, LAYER_BINDING_SETTINGS_KEY, active_profile, l, kp);
 
                 int ret = settings_save_one(setting_name, &binding_setting, len);
                 if (ret < 0) {
@@ -540,10 +541,119 @@ static int save_bindings(void) {
     return 0;
 }
 
+int zmk_keymap_profile_count(void) { return ZMK_KEYMAP_PROFILES_LEN; }
+int zmk_keymap_profile_index(void) { return active_profile; }
+int zmk_keymap_profile_next(void) {
+    int next_profile = (active_profile + 1) % ZMK_KEYMAP_PROFILES_LEN;
+    LOG_DBG("Profile next requested: current=%d next=%d, of %d", active_profile, next_profile,
+            ZMK_KEYMAP_PROFILES_LEN);
+    return zmk_keymap_profile_select(next_profile);
+}
+int zmk_keymap_profile_prev(void) {
+    int prev_profile = (active_profile - 1);
+    if (prev_profile < 0) {
+        prev_profile += ZMK_KEYMAP_PROFILES_LEN;
+    }
+    prev_profile = prev_profile % ZMK_KEYMAP_PROFILES_LEN;
+    LOG_DBG("Profile prev requested: current=%d prev=%d, of %d", active_profile, prev_profile,
+            ZMK_KEYMAP_PROFILES_LEN);
+    return zmk_keymap_profile_select(prev_profile);
+}
+int zmk_keymap_profile_select(uint8_t profile) {
+    uint8_t _profile = profile % ZMK_KEYMAP_PROFILES_LEN;
+
+    LOG_DBG("Profile select requested: current=%d requested=%d normalized=%d", active_profile,
+            profile, _profile);
+
+    if (_profile == active_profile) {
+        LOG_DBG("Profile select skipped: already on profile %d", active_profile);
+        return 0;
+    }
+
+    char setting_name[12];
+    sprintf(setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, _profile);
+    LOG_DBG("Loading keymap subtree '%s' (current profile=%d)", setting_name, active_profile);
+    int ret = settings_load_subtree(setting_name);
+    if (ret < 0) {
+        LOG_ERR("Failed to load keymap for profile %d (%d)", _profile, ret);
+        return ret;
+    }
+
+    active_profile = _profile;
+    LOG_DBG("Profile select complete: active_profile=%d", active_profile);
+
+    return 0;
+}
+
+static int zmk_keymap_profile_clone_handler(const char *key, size_t len, settings_read_cb read_cb,
+                                            void *cb_arg, void *param) {
+    const char *next;
+    uint8_t dest_profile = *(uint8_t *)param;
+
+    if (settings_name_steq(key, "l", &next) && next) {
+        char *endptr;
+        uint8_t layer = strtoul(next, &endptr, 10);
+        if (*endptr != '/') {
+            LOG_WRN("Invalid layer number in clone: %s with endptr %s", next, endptr);
+            return -EINVAL;
+        }
+
+        uint8_t key_position = strtoul(endptr + 1, &endptr, 10);
+        if (*endptr != '\0') {
+            LOG_WRN("Invalid key_position in clone: %s with endptr %s", next, endptr);
+            return -EINVAL;
+        }
+
+        if (len > sizeof(struct zmk_behavior_binding_setting)) {
+            LOG_ERR("Too large binding setting size (got %d expected %d)", len,
+                    sizeof(struct zmk_behavior_binding_setting));
+            return -EINVAL;
+        }
+
+        struct zmk_behavior_binding_setting binding_setting = {0};
+        int err = read_cb(cb_arg, &binding_setting, len);
+        if (err <= 0) {
+            LOG_ERR("Failed to read binding for clone (err %d)", err);
+            return err;
+        }
+
+        char dest_key[29];
+        sprintf(dest_key, LAYER_BINDING_SETTINGS_KEY, dest_profile, layer, key_position);
+        err = settings_save_one(dest_key, &binding_setting, len);
+        if (err < 0) {
+            LOG_ERR("Failed to save cloned binding at %s (err %d)", dest_key, err);
+            return err;
+        }
+
+        LOG_DBG("Cloned binding layer=%d pos=%d to profile=%d", layer, key_position, dest_profile);
+    }
+
+    return 0;
+}
+
+int zmk_keymap_profile_clone(uint8_t source_profile, uint8_t dest_profile) {
+    if (source_profile >= ZMK_KEYMAP_PROFILES_LEN || dest_profile >= ZMK_KEYMAP_PROFILES_LEN) {
+        return -EINVAL;
+    }
+
+    if (source_profile == dest_profile) {
+        LOG_DBG("Profile clone skipped: source and destination are the same profile %d",
+                source_profile);
+        return 0;
+    }
+
+    char source_setting_name[12];
+    sprintf(source_setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, source_profile);
+
+    return settings_load_subtree_direct(source_setting_name, zmk_keymap_profile_clone_handler,
+                                        &dest_profile);
+}
+
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 static int save_layer_orders(void) {
-    int ret = settings_save_one(LAYER_ORDER_SETTINGS_KEY, keymap_layer_orders,
-                                ARRAY_SIZE(keymap_layer_orders));
+    char setting_name[22];
+    sprintf(setting_name, LAYER_ORDER_SETTINGS_KEY, active_profile);
+    int ret = settings_save_one(setting_name, keymap_layer_orders, ARRAY_SIZE(keymap_layer_orders));
     if (ret < 0) {
         return ret;
     }
@@ -612,10 +722,16 @@ static void reload_from_stock_keymap(void) {
 }
 
 int zmk_keymap_discard_changes(void) {
+    LOG_DBG("Discard changes requested for active_profile=%d", active_profile);
     load_stock_keymap_layer_ordering();
     reload_from_stock_keymap();
 
     int ret = settings_load_subtree("keymap");
+    char setting_name[12];
+    sprintf(setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, active_profile);
+    LOG_DBG("Reloading profile-specific subtree '%s' for active_profile=%d", setting_name,
+            active_profile);
+    ret += settings_load_subtree(setting_name);
     if (ret >= 0) {
         changed_layer_names = 0;
 
@@ -631,8 +747,8 @@ static int keymap_track_changed_bindings(const char *key, size_t len, settings_r
                                          void *cb_arg, void *param) {
     const char *next;
     if (settings_name_steq(key, "l", &next) && next) {
-        uint8_t(*state)[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE] =
-            (uint8_t(*)[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE])param;
+        uint8_t (*state)[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE] =
+            (uint8_t (*)[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE])param;
         char *endptr;
         uint8_t layer = strtoul(next, &endptr, 10);
         if (*endptr != '/') {
@@ -653,31 +769,37 @@ static int keymap_track_changed_bindings(const char *key, size_t len, settings_r
 }
 
 int zmk_keymap_reset_settings(void) {
-    settings_delete(LAYER_ORDER_SETTINGS_KEY);
 
     uint8_t zmk_keymap_layer_changes[ZMK_KEYMAP_LAYERS_LEN][PENDING_ARRAY_SIZE];
 
-    settings_load_subtree_direct("keymap", keymap_track_changed_bindings,
-                                 &zmk_keymap_layer_changes);
+    for (int p = 0; p < ZMK_KEYMAP_PROFILES_LEN; p++) {
+        char layer_order_setting_name[22];
+        sprintf(layer_order_setting_name, LAYER_ORDER_SETTINGS_KEY, p);
+        settings_delete(layer_order_setting_name);
+        char setting_name[12];
+        sprintf(setting_name, LAYER_BINDING_SETTINGS_PROFILE_KEY, p);
+        settings_load_subtree_direct(setting_name, keymap_track_changed_bindings,
+                                     &zmk_keymap_layer_changes);
 
-    for (int l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
-        char layer_name_setting_name[14];
-        sprintf(layer_name_setting_name, LAYER_NAME_SETTINGS_KEY, l);
-        settings_delete(layer_name_setting_name);
+        for (int l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
+            char layer_name_setting_name[14];
+            sprintf(layer_name_setting_name, LAYER_NAME_SETTINGS_KEY, l);
+            settings_delete(layer_name_setting_name);
 
-        uint8_t *changes = zmk_keymap_layer_changes[l];
+            uint8_t *changes = zmk_keymap_layer_changes[l];
 
-        for (int k = 0; k < ZMK_KEYMAP_LEN; k++) {
-            if (memcmp(&zmk_keymap[l][k], &zmk_stock_keymap[l][k],
-                       sizeof(struct zmk_behavior_binding_setting)) == 0) {
-                continue;
-            }
+            for (int k = 0; k < ZMK_KEYMAP_LEN; k++) {
+                if (memcmp(&zmk_keymap[l][k], &zmk_stock_keymap[l][k],
+                           sizeof(struct zmk_behavior_binding_setting)) == 0) {
+                    continue;
+                }
 
-            if (changes[k / 8] & BIT(k % 8)) {
-                LOG_WRN("CLEAR %d on %d layer", k, l);
-                char setting_name[20];
-                sprintf(setting_name, LAYER_BINDING_SETTINGS_KEY, l, k);
-                settings_delete(setting_name);
+                if (changes[k / 8] & BIT(k % 8)) {
+                    LOG_WRN("CLEAR %d on %d layer", k, l);
+                    char setting_name[29];
+                    sprintf(setting_name, LAYER_BINDING_SETTINGS_KEY, active_profile, l, k);
+                    settings_delete(setting_name);
+                }
             }
         }
     }
@@ -841,10 +963,18 @@ ZMK_SUBSCRIPTION(keymap, zmk_sensor_event);
 
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
-static int keymap_handle_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
+static int keymap_handle_set(const char *_name, size_t len, settings_read_cb read_cb,
+                             void *cb_arg) {
     const char *next;
+    const char *name = _name;
 
-    LOG_DBG("Setting Keymap setting %s", name);
+    LOG_DBG("Setting keymap setting '%s' len=%d active_profile=%d", _name, len, active_profile);
+
+    if (name[0] == 'p') {
+        name = _name + 4;
+    }
+
+    LOG_DBG("Current name '%s'", name);
 
     if (settings_name_steq(name, "l_n", &next) && next) {
         char *endptr;
@@ -867,6 +997,8 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
         }
 
         zmk_keymap_layer_names[layer][ret] = 0;
+        LOG_DBG("Loaded layer name for layer=%d active_profile=%d name='%s'", layer, active_profile,
+                zmk_keymap_layer_names[layer]);
     } else if (settings_name_steq(name, "l", &next) && next) {
         char *endptr;
         uint8_t layer = strtoul(next, &endptr, 10);
@@ -921,6 +1053,8 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
             .param1 = binding_setting.param1,
             .param2 = binding_setting.param2,
         };
+        LOG_DBG("Loaded layer binding for layer=%d position=%d active_profile=%d behavior_id=%d",
+                layer, key_position, active_profile, binding_setting.behavior_local_id);
     }
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
     else if (settings_name_steq(name, "layer_order", &next) && !next) {
@@ -936,13 +1070,18 @@ static int keymap_handle_set(const char *name, size_t len, settings_read_cb read
 
         memcpy(keymap_layer_orders, settings_layer_orders,
                MIN(len, ARRAY_SIZE(settings_layer_orders)));
+        LOG_DBG("Loaded layer order for active_profile=%d", active_profile);
     }
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
+    else {
+        LOG_DBG("Ignoring keymap setting '%s' while active_profile=%d", name, active_profile);
+    }
 
     return 0;
 };
 
 static int keymap_handle_commit(void) {
+    LOG_DBG("Keymap settings commit start: active_profile=%d", active_profile);
 #if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_LOCAL_IDS_IN_BINDINGS)
     for (int l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
         for (int p = 0; p < ZMK_KEYMAP_LEN; p++) {
@@ -961,15 +1100,38 @@ static int keymap_handle_commit(void) {
     }
 #endif
 
+    LOG_DBG("Keymap settings commit complete: active_profile=%d", active_profile);
     return 0;
 }
 
 SETTINGS_STATIC_HANDLER_DEFINE(keymap, "keymap", NULL, keymap_handle_set, keymap_handle_commit,
                                NULL);
 
+int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer) {
+    if (source_layer >= ZMK_KEYMAP_LAYERS_LEN || dest_layer >= ZMK_KEYMAP_LAYERS_LEN) {
+        return -EINVAL;
+    }
+
+    if (source_layer == dest_layer) {
+        return 0;
+    }
+
+    for (uint16_t k = 0; k < ZMK_KEYMAP_LEN; k++) {
+        const struct zmk_behavior_binding *binding =
+            zmk_keymap_get_layer_binding_at_idx(source_layer, k);
+        int ret = zmk_keymap_set_layer_binding_at_idx(dest_layer, k, *binding);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
 #endif // IS_ENABLED(CONFIG_ZMK_KEYMAP_SETTINGS_STORAGE)
 
 int keymap_init(void) {
+    LOG_DBG("Keymap init: active_profile=%d", active_profile);
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
     load_stock_keymap_layer_ordering();
 #endif

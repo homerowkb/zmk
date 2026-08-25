@@ -10,6 +10,12 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/devicetree.h>
 
+#ifdef CONFIG_ZMK_KEYMAP_PROFILES_LEN
+#define ZMK_KEYMAP_PROFILES_LEN CONFIG_ZMK_KEYMAP_PROFILES_LEN
+#else
+#define ZMK_KEYMAP_PROFILES_LEN 3
+#endif
+
 #define ZMK_KEYMAP_LAYERS_FOREACH(_fn)                                                             \
     COND_CODE_1(IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING),                                    \
                 (DT_FOREACH_CHILD(DT_INST(0, zmk_keymap), _fn)),                                   \
@@ -59,6 +65,8 @@ const struct zmk_behavior_binding *zmk_keymap_get_layer_binding_at_idx(zmk_keyma
 int zmk_keymap_set_layer_binding_at_idx(zmk_keymap_layer_id_t layer, uint16_t binding_idx,
                                         const struct zmk_behavior_binding binding);
 
+int zmk_keymap_layer_clone(uint8_t source_layer, uint8_t dest_layer);
+
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP_LAYER_REORDERING)
 
 int zmk_keymap_add_layer(void);
@@ -70,6 +78,13 @@ int zmk_keymap_move_layer(zmk_keymap_layer_index_t start_idx, zmk_keymap_layer_i
 int zmk_keymap_set_layer_name(zmk_keymap_layer_id_t id, const char *name, size_t size);
 
 #endif
+
+int zmk_keymap_profile_count(void);
+int zmk_keymap_profile_index(void);
+int zmk_keymap_profile_next(void);
+int zmk_keymap_profile_prev(void);
+int zmk_keymap_profile_select(uint8_t profile);
+int zmk_keymap_profile_clone(uint8_t source_profile, uint8_t dest_profile);
 
 /**
  * @brief Check if there are any unsaved keymap changes.

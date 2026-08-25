@@ -20,6 +20,7 @@ const NODES = {
   "/behaviors/behavior_behavior_reset": "sysreset",
   "/behaviors/behavior_reset_dfu": "bootload",
   "/behaviors/behavior_rgb_underglow": "rgb_ug",
+  "/behaviors/behavior_profile": "profiles",
   "/behaviors/behavior_sensor_rotate_key_press": "enc_key_press",
   "/behaviors/behavior_sticky_key": "sticky_key",
   "/behaviors/behavior_sticky_layer": "sticky_layer",
